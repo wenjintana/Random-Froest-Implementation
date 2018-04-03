@@ -1,0 +1,560 @@
+
+#tree
+tree = function(root,branches){
+structure(list(root = root,branches = branches),class = 'tree')
+}
+node
+node = function(root){
+structure(list(root = as.character((root))),class = 'node')
+}
+gini index
+gini <- function(feature,target_attr,train_data){
+if(!is.factor(train_data[,feature])) train_data[,feature] = as.factor(train
+_data[,feature])
+if(is.double(train_data[,feature])){
+o = sort(as.vector(train_data[,feature]))
+o = o[!duplicated(o)]
+o = o[-length(o)]
+gini_num = c()
+for(i in o){
+q = cut(train_data[,feature], breaks = c(-Inf, i, Inf))
+p_coun = prop.table(table(q))
+suan_1 = table(q,train_data[,target_attr])
+suan_2 = apply(suan_1,MARGIN = 1, function(x) x/sum(x))
+suan_3 = apply(suan_2, MARGIN = 2, function(x) 1-sum((x^2)))
+gini_num = append(gini_num, sum(p_coun*suan_3))
+gini_num[is.na(gini_num)] = 0
+result = min(gini_num)
+}
+}
+else{
+p <- prop.table(table(train_data[,feature])) #the weighted factor
+a <- table(train_data[,feature],train_data[,target_attr])
+b <- apply(a,MARGIN = 1, function(x) x/sum(x))
+c <- apply(b, MARGIN = 2, function(x) 1-sum((x^2)))
+c[is.na(c)] = 0
+gini <- sum(p*c)
+result = gini}
+result
+}
+Entropy
+entropy = function(feature){
+#I use data here, we may try to use other name to get the training data
+if(!is.factor(data[,feature])) data[,feature] = as.factor(data[,feature])
+p = prop.table(table(data[,feature]))
+#calculate entropy for each attribute in one column
+#need to specify global attribute
+a = table(data[,feature],data[,target_attr])
+b = apply(a,1,function(x) x/sum(x))
+c = apply(b,2,function(x) -sum(x/sum(x)*log2(x/sum(x))))
+for(i in names(c)){if(c[i] == 'NaN'){c[i] = 0}}
+sum(sapply(levels(data[,feature]),function(name) p[name]*c[name]))
+}
+find the most frequency attribute
+most.frq = function(nbr.class){
+uniq = unique(nbr.class)
+uniq[which.max(tabulate(match(nbr.class,uniq)))]
+}
+single decision tree
+Recursively builds a tree data structure that contians the decision tree
+ID3 = function(dataset,target_attr, attributes = setdiff(names(dataset),targe
+t_attr)){
+if(length(attributes) <= 0){
+#print('attributes ran out')
+#If there are no attributes left to classify with, return the most common
+class left in the dataset as a best approximation.
+return(node(most.frq(dataset[,target_attr])))
+}
+# If there is only one classification left, return a node with that classif
+ication as the answer
+if (length(unique(dataset[,target_attr])) == 1){
+#print('one class left')
+return(node(unique(dataset[,target_attr])[1]))
+}
+#select the best attribute based on the minimum gini index
+best_attr = attributes[which.min(sapply(attributes,gini,target_attr = targe
+t_attr,train_data = dataset))]#if the attributes is contious, find the best split point and cut dataset i
+nto two parts
+if(is.double(dataset[,best_attr])){
+o = sort(as.vector(dataset[,best_attr]))
+o = o[!duplicated(o)]
+o = o[-length(o)]
+gini_num = c()
+for(i in o){
+q = cut(dataset[,best_attr], breaks = c(-Inf, i, Inf))
+p_coun = prop.table(table(q))
+suan_1 = table(q, dataset[,target_attr])
+suan_2 = apply(suan_1,MARGIN = 1, function(x) x/sum(x))
+suan_3 = apply(suan_2, MARGIN = 2, function(x) 1-sum((x^2)))
+gini_num = append(gini_num, sum(p_coun*suan_3))
+}
+dataset[,best_attr] = cut(dataset[,best_attr], breaks = c(-Inf, o[which.m
+in(gini_num)], Inf))
+}
+#create the set of remaining attributes
+rem_attrs = setdiff(attributes,best_attr)
+#split the dataset into groups based on levels of the best_attr
+split_dataset = split(dataset,dataset[,best_attr])
+#recursively branch to create the tree
+branches = lapply(seq_along(split_dataset),function(i){
+# The name of the branch
+name = names(split_dataset)[i]
+# Get branch data
+branch = split_dataset[[i]]
+# If there is no data, return the most frequent class in the parent, othe
+rwise start over with new branch data.
+if (nrow(branch) == 0) node(most.frq(dataset[,target_attr]))
+else ID3(branch[, union(target_attr, rem_attrs),drop = FALSE], target_att
+r,rem_attrs)
+})
+names(branches) <- names(split_dataset)
+id3_tree = tree(root = best_attr,branches = branches)
+id3_tree
+}
+predict
+This function takes a tree object created from decision tree, and traverses it foreach item in
+the test_obs data frame. The classifications for each item s returned.library(stringr)
+numextract <- function(string){
+str_extract(string, "\\-*\\d+\\.*\\d*")
+}
+traverse = function(obs,work_tree){
+if(class(work_tree) == 'node') work_tree$root
+else{
+var = work_tree$root
+if(is.double(obs[[var]])){
+a = names(work_tree$branches)
+#extract the split point number
+number = as.numeric(numextract(a[1]))
+#split the dataset based on the best split number in the decision tree
+obs[var] = cut(obs[[var]], breaks = c(-Inf, number, Inf))
+new_tree = work_tree$branches[[as.character(obs[[var]])]]
+}
+else{
+new_tree = work_tree$branches[[as.character(obs[[var]])]]
+}
+traverse(obs,new_tree)
+}
+}
+bootstrap
+get_subsample <- function(data,sub_sample_ratio){
+n_subdata <- round(nrow(data)*sub_sample_ratio)
+subdata <- matrix(rep(0),ncol=ncol(data),nrow=1)
+name_dataframe <- names(data)
+data <- as.matrix(data)
+while (nrow(subdata) <= n_subdata){
+index <- sample(c(1:nrow(data)),1)
+subdata <- rbind(subdata,as.vector(data[index,]))
+}
+subdata <- as.data.frame(subdata[2:nrow(subdata),])
+names(subdata) <- name_dataframe
+subdata
+}
+get sub feature
+randomly select dataset
+get_subfeature <- function(train_data, n_feature,target_attr){
+feature_to_be_selected <- setdiff(names(train_data),target_attr)
+goal_data = train_data[feature_to_be_selected]
+index <- sample(seq_along( feature_to_be_selected ), n_feature)feature <- names(goal_data)[index]
+return(feature)
+}
+train forest
+#train_data: import data
+#target_attr: what we want to predict
+#n_tree: forest include how mang trees
+#n_feature: how many feature to build a tree
+#sub_sample_ratio:sample ratio
+random_forest_train <- function(train_data,target_attr, n_tree, n_feature, su
+b_sample_ratio){
+trees <- list()
+oob_data <- list()
+for(i in 1:n_tree){
+##bootstrap
+random_row <-sample(nrow(train_data), as.integer(sub_sample_ratio*nrow(tr
+ain_data)),replace = TRUE )
+sub_train <- train_data[random_row,]
+oob <- train_data[-random_row,]
+sub_feature <- get_subfeature(train_data, n_feature,target_attr)
+sub_feature <- append(sub_feature,target_attr)
+sub_train_sub_feature = sub_train[c(sub_feature)]
+trees <- append(trees, list(ID3(sub_train_sub_feature,target_attr)))
+oob_data <- append(oob_data,list(oob))
+}
+return(list(trees,oob_data))
+}
+predict
+random_forest_predict <- function(test_data,trees){
+n_tree = length(trees)
+rf_predict <- matrix(0,nrow=nrow(test_data),ncol=n_tree)
+for (j in 1:nrow(test_data)){
+for(i in 1:n_tree){
+#change here
+rf_predict[j,i] <- traverse(test_data[j,], trees[[i]])
+}
+}
+test_result <- c()
+for (i in 1:nrow(rf_predict)){
+test_result[i] <- names(table(rf_predict[i,]))[which.max(table(rf_predict
+[i,]))]
+}
+return(as.data.frame(test_result))
+}example
+iris dataset with continuous and categorical variables
+forest and predict result
+df=iris[sample(nrow(iris)),]
+train_data=df[1:120,]
+test_data=df[121:150,1:4]
+train=random_forest_train(train_data,target_attr = 'Species',n_tree = 10,n_fe
+ature = 3,sub_sample_ratio = 0.66)
+train_trees=train[[1]]
+predict_iris=random_forest_predict(test_data,train_trees)
+predict_iris
+## test_result
+## 1 setosa
+## 2 setosa
+## 3 virginica
+## 4 setosa
+## 5 versicolor
+## 6 virginica
+## 7 virginica
+## 8 virginica
+## 9 versicolor
+## 10 versicolor
+## 11 versicolor
+## 12 versicolor
+## 13 setosa
+## 14 setosa
+## 15 versicolor
+## 16 virginica
+## 17 versicolor
+## 18 virginica
+## 19 setosa
+## 20 virginica
+## 21 versicolor
+## 22 setosa
+## 23 versicolor
+## 24 setosa
+## 25 versicolor
+## 26 setosa
+## 27 setosa
+## 28 setosa
+## 29 setosa
+## 30 setosaevaluation iris
+test_data_true_value=df[121:nrow(df),'Species']
+library(mda)
+## Warning: package 'mda' was built under R version 3.4.3
+## Loading required package: class
+## Loaded mda 0.4-10
+#confusion matrix
+confusion(predict_iris[[1]],test_data_true_value)
+## true
+## predicted setosa versicolor virginica
+## setosa 13 0 0
+## versicolor 0 10 0
+## virginica 0 0 7
+#oob
+oob=train[[2]]
+predict_each_tree <- c()
+oob_predict <- c()
+for (i in 1:length(oob)){
+oob_data <- oob[[i]]
+for ( j in 1:nrow(oob_data)){
+predict_each_tree <- append(predict_each_tree,traverse(oob_data[j,],train_t
+rees[[i]]))
+}
+oob_predict <- append(oob_predict,list(predict_each_tree))
+}
+#oob error=fraction of incorrect prediction of all oob oberservation for each
+tree
+#total oob error=mean(oob error of each tree)
+e <- c()
+for (i in 1:length(oob)){
+oob_data2 <- oob[[i]]
+true_oob <- oob_data2['Species']
+predict_oob=oob_predict[[i]]
+e[i]=1-sum(true_oob==predict_oob)/nrow(true_oob)
+}
+oob_error=mean(e)
+paste('Out of bag error of iris:',oob_error)
+## [1] "Out of bag error of iris: 0.540254373531087"
+test 1
+breastcancerbreastcancer=read.csv('C:/Users/Wenjin/Google Drive/STAT545/Final project/bre
+astcancer.csv')
+train_data=breastcancer[1:500,]
+test_data=breastcancer[501:569,-1]
+options(scipen = 999)
+train=random_forest_train(train_data,target_attr = names(train_data[1]), n_tr
+ee = 20,n_feature=10, sub_sample_ratio = 0.66)
+train_forest=train[[1]]
+predict_breastcancer=random_forest_predict(test_data,train_forest)
+predict_breastcancer
+## test_result
+## 1 B
+## 2 M
+## 3 B
+## 4 M
+## 5 B
+## 6 B
+## 7 B
+## 8 B
+## 9 B
+## 10 M
+## 11 B
+## 12 B
+## 13 M
+## 14 B
+## 15 M
+## 16 B
+## 17 M
+## 18 M
+## 19 B
+## 20 B
+## 21 B
+## 22 M
+## 23 B
+## 24 B
+## 25 B
+## 26 B
+## 27 B
+## 28 B
+## 29 B
+## 30 B
+## 31 B
+## 32 B
+## 33 B
+## 34 M
+## 35 B
+## 36 M## 37 B
+## 38 B
+## 39 B
+## 40 B
+## 41 B
+## 42 M
+## 43 B
+## 44 B
+## 45 B
+## 46 B
+## 47 B
+## 48 B
+## 49 B
+## 50 B
+## 51 B
+## 52 B
+## 53 B
+## 54 B
+## 55 B
+## 56 B
+## 57 B
+## 58 B
+## 59 B
+## 60 B
+## 61 B
+## 62 B
+## 63 M
+## 64 M
+## 65 M
+## 66 M
+## 67 M
+## 68 M
+## 69 B
+evaluation breastcancer
+test_data_true_value=breastcancer[501:nrow(breastcancer),names(breastcancer[1
+])]
+library(mda)
+#confusion matrix
+confusion(predict_breastcancer[[1]],test_data_true_value)
+## true
+## predicted B M
+## B 51 1
+## M 1 16
+#oob
+oob=train[[2]]
+predict_each_tree <- c()
+oob_predict <- c()for (i in 1:length(oob)){
+oob_data <- oob[[i]]
+for ( j in 1:nrow(oob_data)){
+predict_each_tree <- append(predict_each_tree,traverse(oob_data[j,],train_f
+orest[[i]]))
+}
+oob_predict <- append(oob_predict,list(predict_each_tree))
+}
+#oob error=fraction of incorrect prediction of all oob oberservation for each
+tree
+#total oob error=mean(oob error of each tree)
+e <- c()
+for (i in 1:length(oob)){
+oob_data2 <- oob[[i]]
+true_oob <- oob_data2[names(breastcancer[1])]
+predict_oob=oob_predict[[i]]
+e[i]=1-sum(true_oob==predict_oob)/nrow(true_oob)
+}
+oob_error=mean(e)
+paste('Out of bag error of iris:',oob_error)
+## [1] "Out of bag error of iris: 0.406176093818181"
+test 2
+mushroom dataset [22 categorical variables and 8124 observations]
+mushroom=read.csv('C:/Users/Wenjin/Google Drive/STAT545/Final project/mushroo
+ms.csv')
+train_data=mushroom[1:8000,]
+test_data=mushroom[8000:8124,-1]
+train=random_forest_train(train_data,target_attr = names(train_data[1]), n_tr
+ee = 20,n_feature=10, sub_sample_ratio = 0.66)
+train_forest=train[[1]]
+predict_mushroom=random_forest_predict(test_data,train_forest)
+predict_mushroom
+## test_result
+## 1 e
+## 2 e
+## 3 e
+## 4 e
+## 5 e
+## 6 p
+## 7 p
+## 8 p
+## 9 p
+## 10 p## 11 e
+## 12 e
+## 13 e
+## 14 p
+## 15 e
+## 16 e
+## 17 e
+## 18 p
+## 19 e
+## 20 e
+## 21 e
+## 22 p
+## 23 p
+## 24 p
+## 25 p
+## 26 p
+## 27 e
+## 28 e
+## 29 p
+## 30 p
+## 31 e
+## 32 e
+## 33 p
+## 34 p
+## 35 p
+## 36 e
+## 37 e
+## 38 e
+## 39 p
+## 40 e
+## 41 p
+## 42 e
+## 43 p
+## 44 e
+## 45 e
+## 46 e
+## 47 p
+## 48 e
+## 49 p
+## 50 p
+## 51 p
+## 52 p
+## 53 e
+## 54 e
+## 55 p
+## 56 e
+## 57 e
+## 58 e
+## 59 e
+## 60 p## 61 p
+## 62 p
+## 63 p
+## 64 p
+## 65 e
+## 66 p
+## 67 e
+## 68 p
+## 69 e
+## 70 e
+## 71 e
+## 72 p
+## 73 e
+## 74 p
+## 75 e
+## 76 e
+## 77 e
+## 78 e
+## 79 e
+## 80 e
+## 81 p
+## 82 p
+## 83 p
+## 84 p
+## 85 p
+## 86 e
+## 87 e
+## 88 e
+## 89 p
+## 90 e
+## 91 p
+## 92 p
+## 93 p
+## 94 p
+## 95 p
+## 96 e
+## 97 p
+## 98 e
+## 99 p
+## 100 p
+## 101 e
+## 102 e
+## 103 p
+## 104 e
+## 105 e
+## 106 e
+## 107 e
+## 108 e
+## 109 e
+## 110 p## 111 e
+## 112 e
+## 113 e
+## 114 e
+## 115 p
+## 116 p
+## 117 e
+## 118 p
+## 119 p
+## 120 p
+## 121 e
+## 122 e
+## 123 e
+## 124 p
+## 125 e
+evaluation mushroom dataset
+test_data_true_value=mushroom[8000:8124,'class']
+library(mda)
+#confusion matrix
+confusion(predict_mushroom[[1]],test_data_true_value)
+## true
+## predicted e p
+## e 68 0
+## p 0 57
+#oob
+oob=train[[2]]
+predict_each_tree <- c()
+oob_predict <- c()
+for (i in 1:length(oob)){
+oob_data <- oob[[i]]
+for ( j in 1:nrow(oob_data)){
+predict_each_tree <- append(predict_each_tree,traverse(oob_data[j,],train_f
+orest[[i]]))
+}
+oob_predict <- append(oob_predict,list(predict_each_tree))
+}
+#oob error=fraction of incorrect prediction of all oob oberservation for each
+tree
+#total oob error=mean(oob error of each tree)
+e <- c()
+for (i in 1:length(oob)){
+i=1
+oob_data2 <- oob[[i]]
+true_oob <- oob_data2['class']
+predict_oob=oob_predict[[i]]
+e[i]=1-sum(true_oob==predict_oob)/nrow(true_oob)}
+oob_error=mean(e)
+paste('Out of bag error of mushroom:',oob_error)
+## [1] "Out of bag error of mushroom: 0.00791936645068392"
